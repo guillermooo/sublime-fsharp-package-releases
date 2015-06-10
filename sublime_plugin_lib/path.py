@@ -5,12 +5,47 @@
 '''Helper functions for path management.
 '''
 
-from contextlib import contextmanager
-from os.path import join
 import glob
 import os
+from os.path import join
+from contextlib import contextmanager
+
+import sublime
 
 from .plat import is_windows
+
+
+class FileInfo(object):
+    """
+    Base class.
+
+    Subclasses inspect a file for interesting properties from a plugin's POV.
+    """
+
+    def __init__(self, view_or_fname):
+        """
+        @view_or_fname
+          A Sublime Text view or a file name.
+        """
+        assert view_or_fname, 'wrong arg: %s' % view_or_fname
+        self.view_or_fname = view_or_fname
+
+    def __str__(self):
+        return self.path
+
+    @property
+    def path(self):
+        try:
+            # The returned path can be None, for example, if the view is unsaved.
+            return self.view_or_fname.file_name()
+        except AttributeError:
+            return self.view_or_fname
+
+    def extension_equals(self, extension):
+        return self.path and extension_equals(self.path, extension)
+
+    def extension_in(self, *extensions):
+        return self.path and any(self.extension_equals(ext) for ext in extensions)
 
 
 def extension_equals(path_or_view, extension):
@@ -50,7 +85,8 @@ def find_in_path(name, win_ext=''):
 
 
 def find_file_by_extension(start, extension):
-    '''Finds a file in a directory hierarchy starting from @start and
+    '''
+    Finds a file in a directory hierarchy starting from @start and
     walking upwards.
 
     @start
@@ -75,7 +111,7 @@ def find_file_by_extension(start, extension):
 
 def find_file(start, fname):
     '''Finds a file in a directory hierarchy starting from @start and
-    walking upwards.
+    walking backwards.
 
     @start
       The directory to start from.
@@ -120,17 +156,19 @@ def to_platform_path(original, append):
 def is_active_path(path):
     """Returns `True` if the current view's path equals @path.
     """
-    group_id = view.window().active_group()
-    group_view = view.window().active_view_in_group(group_id)
-    return os.path.realpath(group_view.file_name()) == os.path.realpath(path)
+    view = sublime.active_window().active_view()
+    if not view:
+        return
+    return os.path.realpath(view.file_name()) == os.path.realpath(path)
 
 
 def is_active(view):
     """Returns `True` if @view is the view being currently edited.
     """
-    group_id = view.window().active_group()
-    group_view = view.window().active_view_in_group(group_id)
-    return group_view.id() == view.id()
+    active_view = sublime.active_window().active_view()
+    if not active_view:
+        return
+    return active_view == view
 
 
 @contextmanager

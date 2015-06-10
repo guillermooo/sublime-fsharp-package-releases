@@ -12,15 +12,31 @@ import sublime_plugin
 
 from FSharp.fsac.server import completions_queue
 from FSharp.fsharp import editor_context
-from FSharp.lib.events import IdleIntervalEventListener
 from FSharp.lib.project import FileInfo
 from FSharp.lib.response_processor import add_listener
 from FSharp.lib.response_processor import ON_COMPLETIONS_REQUESTED
 from FSharp.sublime_plugin_lib.context import ContextProviderMixin
 from FSharp.sublime_plugin_lib.sublime import after
+from FSharp.sublime_plugin_lib.events import IdleIntervalEventListener
 
 
 _logger = logging.getLogger(__name__)
+
+
+class IdleParser(IdleIntervalEventListener):
+    """
+    Reparses the current view after @self.duration milliseconds of inactivity.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.duration = 1000
+
+    def check(self, view):
+        return FileInfo(view).is_fsharp_code
+
+    def on_idle(self, view):
+        editor_context.parse_view(view)
 
 
 class IdleAutocomplete(IdleIntervalEventListener):
@@ -36,10 +52,8 @@ class IdleAutocomplete(IdleIntervalEventListener):
     def check(self, view):
         # Offer F# completions in F# files when the caret isn't in a string or
         # comment. If strings or comments, offer plain Sublime Text completions.
-        return all((
-            view.file_name(),
-            not view.match_selector(view.sel()[0].b, 'source.fsharp string, source.fsharp comment'),
-            FileInfo(view).is_fsharp_code))
+        return (not self._in_string_or_comment(view)
+                and FileInfo(view).is_fsharp_code)
 
     def on_idle(self, view):
         self._show_completions(view)
@@ -53,6 +67,13 @@ class IdleAutocomplete(IdleIntervalEventListener):
 
         if is_after_dot:
             view.window().run_command('fs_run_fsac', {'cmd': 'completion'})
+
+    def _in_string_or_comment(self, view):
+        try:
+            return view.match_selector(view.sel()[0].b,
+                    'source.fsharp string, source.fsharp comment')
+        except IndexError:
+            pass
 
 
 class FSharpProjectTracker(sublime_plugin.EventListener):
@@ -73,7 +94,7 @@ class FSharpProjectTracker(sublime_plugin.EventListener):
             if FSharpProjectTracker.parsed.get(view_id):
                 return
 
-        editor_context.parse_view(view)
+        editor_context.parse_view(view, force=True)
         self.set_parsed(view, True)
 
     def on_load_async(self, view):
